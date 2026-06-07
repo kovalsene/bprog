@@ -60,12 +60,13 @@ if not st.session_state.file_loaded:
     st.info("""
     ### 📋 Как работать с программой:
     
-    1. **Загрузите файл** — нажмите "Browse files" и выберите Excel-файл
-    2. **Заполните данные** — все поля, кроме первых 10 столбцов
+    1. **Загрузите файл** — нажмите "Upload" и выберите Excel-файл, который получили от педагога-организатора
+    2. **Заполните данные** — все поля, кроме данных по заявке
     3. **Сохраните** — нажмите "Сохранить" и скачайте обновлённый файл
     4. **Продолжите позже** — загрузите сохранённый файл снова
+    5. **Отправить** — готовый файл отправить на почту a.koval@ok654.ru 
     
-    > 💡 Первые 10 столбцов защищены от изменений.
+    > 💡 Первые 10 полей защищены от изменений.
     """)
     st.stop()
 
@@ -218,7 +219,7 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
             })
     
     filled_themes = sum(1 for r in table_data if r['Тема'] or r['Теория (часы)'] > 0 or r['Практика (часы)'] > 0)
-    suggested_rows = max(filled_themes + 5, 5)
+    suggested_rows = max(filled_themes, 5)
     num_rows = st.number_input(
         "Количество тем для заполнения (установите необходимое количество):", min_value=0, max_value=len(table_data),
         value=min(suggested_rows, len(table_data)), step=1, key="num_themes"
