@@ -180,7 +180,7 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     st.header("📅 Учебно-тематический план")
     
     # === ИЗМЕНЕНО: Правильные константы для 110 тем ===
-    max_themes = 110  # Увеличили до 110
+    max_themes = 100  # Увеличили до 110
     cols_per_theme = 4
     theme_start_idx = 24
     content_start_idx = theme_start_idx + max_themes * cols_per_theme  # 24 + 440 = 464
