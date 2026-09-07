@@ -179,12 +179,6 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     # === БЛОК 3: УЧЕБНЫЙ ПЛАН ===
     st.header("📅 Учебно-тематический план")
     
-    # === ИЗМЕНЕНО: Правильные константы для 110 тем ===
-    max_themes = 100  # Увеличили до 110
-    cols_per_theme = 4
-    theme_start_idx = 24
-    content_start_idx = theme_start_idx + max_themes * cols_per_theme  # 24 + 440 = 464
-    
     hours_limit_col = all_columns[5] if len(all_columns) > 5 else None
     hours_limit = 36
     if hours_limit_col:
@@ -197,10 +191,12 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     st.info("УТП содержит перечень разделов (модулей) и тем, определяет их последовательность, количество часов по каждому разделу (модулю) и теме с указанием теоретических и практических занятий, а также форм аттестации и контроля. Количество часов в УТП указывается из расчёта на одну группу.")
     st.info("В колонке «Формы аттестации (контроля)» указываются формы подведения итогов освоения каждого раздела (зачеты, проекты, конкурсы, выставки и т.п.) и средства контроля (тесты, творческие задания и т.п.), если они применяются.")
     
-    # Собираем данные по темам
+    theme_start_idx = 24
+    max_themes = 100
+    
     table_data = []
     for i in range(max_themes):
-        idx = theme_start_idx + i * cols_per_theme
+        idx = theme_start_idx + i * 4
         if idx + 3 < len(all_columns):
             tema = current_values.get(all_columns[idx], '')
             teoria_raw = current_values.get(all_columns[idx + 1], '0')
@@ -216,30 +212,21 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
             except:
                 praktika = 0.0
             
-            # Добавляем только если есть данные
-            if tema or teoria > 0 or praktika > 0 or kontrol:
-                table_data.append({
-                    'Номер': i + 1,
-                    'Тема': tema,
-                    'Теория (часы)': teoria,
-                    'Практика (часы)': praktika,
-                    'Форма контроля': kontrol,
-                })
+            table_data.append({
+                'Номер': i + 1, 'Тема': tema,
+                'Теория (часы)': teoria, 'Практика (часы)': praktika,
+                'Форма контроля': kontrol,
+            })
     
-    filled_themes = len(table_data)
+    filled_themes = sum(1 for r in table_data if r['Тема'] or r['Теория (часы)'] > 0 or r['Практика (часы)'] > 0)
     suggested_rows = max(filled_themes, 5)
     num_rows = st.number_input(
-        "Количество тем для заполнения (установите необходимое количество):", 
-        min_value=0, 
-        max_value=max_themes,
-        value=min(suggested_rows, max_themes), 
-        step=1, 
-        key="num_themes"
+        "Количество тем для заполнения (установите необходимое количество):", min_value=0, max_value=len(table_data),
+        value=min(suggested_rows, len(table_data)), step=1, key="num_themes"
     )
     num_rows = int(num_rows)
     
     if num_rows > 0:
-        # Создаём DataFrame для отображения
         display_data = pd.DataFrame(table_data[:num_rows])
         edited_df = st.data_editor(
             display_data,
@@ -250,10 +237,8 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
                 'Практика (часы)': st.column_config.NumberColumn("Практика, часов", min_value=0, max_value=99, format="%g", width="small"),
                 'Форма контроля': st.column_config.TextColumn("Формы аттестации (контроля)", width="large"),
             },
-            num_rows="fixed", 
-            use_container_width=True,
-            key="theme_editor", 
-            hide_index=True,
+            num_rows="fixed", use_container_width=True,
+            key="theme_editor", hide_index=True,
         )
         
         total_teoria = edited_df['Теория (часы)'].sum()
@@ -274,42 +259,28 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     
     st.divider()
     
-    # === СОДЕРЖАНИЕ УЧЕБНОГО ПЛАНА ===
+    # === СОДЕРЖАНИЕ ===
     st.header("📖 Содержание учебного плана")
     st.info("Реферативное (краткое) описание разделов (модулей) и тем программы в соответствии с учебным (тематическим) планом. В данном подразделе кратко описываются виды деятельности на занятии: теория (лекция, семинар, дискуссия, круглый стол, консультация и т.п.) и практика (практическая работа, лабораторная работа, самостоятельная работа, соревнование, игра, экскурсия и т.п.).")
     
+    content_start_idx = theme_start_idx + max_themes * 4
     content_list = []
     if num_rows > 0:
         for i in range(num_rows):
-            # Получаем название темы из отредактированных данных
-            if i < len(edited_df):
-                tema_name = edited_df.iloc[i]['Тема'] if edited_df.iloc[i]['Тема'] else f"Тема {i+1}"
-            else:
-                tema_name = f"Тема {i+1}"
+            tema_name = edited_df.iloc[i]['Тема'] if i < len(edited_df) and edited_df.iloc[i]['Тема'] else f"Тема {i+1}"
             
-            # Индексы для содержания
-            s_teoria_idx = content_start_idx + i * 2
-            s_praktika_idx = content_start_idx + i * 2 + 1
-            
-            # Проверяем, что индексы существуют
-            s_teoria_col = all_columns[s_teoria_idx] if s_teoria_idx < len(all_columns) else None
-            s_praktika_col = all_columns[s_praktika_idx] if s_praktika_idx < len(all_columns) else None
+            s_teoria_col = all_columns[content_start_idx + i*2] if content_start_idx + i*2 < len(all_columns) else None
+            s_praktika_col = all_columns[content_start_idx + i*2 + 1] if content_start_idx + i*2 + 1 < len(all_columns) else None
             
             col_s1, col_s2 = st.columns(2)
             with col_s1:
-                s_teoria = st.text_area(
-                    f"📘 {tema_name} — Содержание теории",
+                s_teoria = st.text_area(f"📘 {tema_name} — Содержание теории",
                     value=current_values.get(s_teoria_col, '') if s_teoria_col else '',
-                    height=80,
-                    key=f"ct_{i}"
-                )
+                    height=80, key=f"ct_{i}")
             with col_s2:
-                s_praktika = st.text_area(
-                    f"📗 {tema_name} — Содержание практики",
+                s_praktika = st.text_area(f"📗 {tema_name} — Содержание практики",
                     value=current_values.get(s_praktika_col, '') if s_praktika_col else '',
-                    height=80,
-                    key=f"cp_{i}"
-                )
+                    height=80, key=f"cp_{i}")
             
             content_list.append({'teoria': s_teoria, 'praktika': s_praktika})
     
@@ -318,40 +289,29 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     # === ДОПОЛНИТЕЛЬНЫЕ СВЕДЕНИЯ ===
     st.header("📋 Дополнительные сведения")
     
-    # === ИЗМЕНЕНО: Правильные индексы для дополнительных сведений ===
-    # В конце есть столбцы: Формы контроля, Условия, Литература, мин, макс
-    # Берём последние 3 нужных столбца (игнорируем мин и макс)
-    if len(all_columns) >= 5:
-        forms_col = all_columns[-5]  # Формы контроля
-        uslovia_col = all_columns[-4]  # Условия
-        literatura_col = all_columns[-3]  # Литература
-    else:
-        forms_col = None
-        uslovia_col = None
-        literatura_col = None
+    forms_col = all_columns[-3] if len(all_columns) >= 3 else None
+    uslovia_col = all_columns[-2] if len(all_columns) >= 2 else None
+    literatura_col = all_columns[-1] if len(all_columns) >= 1 else None
     
     st.info("Формы контроля и оценочные материалы")
     formy_kontrolya = st.text_area(
         "Данный структурный элемент Программы содержит описание форм подведения итогов реализации Программы текущего, промежуточного и итогового контроля (при наличии), которые перечисляются согласно учебному (тематическому) плану (зачеты, проекты, конкурсы, концерты, выставки, фестивали и т.п.) и описание средств контроля (тесты, творческие задания и т.п.), которые позволяют определить достижение планируемых результатов учащимися.",
         value=current_values.get(forms_col, '') if forms_col else '',
-        height=150,
-        key="forms"
+        height=150, key="forms"
     )
     
     st.info("Материально-технические условия реализации программы")
     uslovia = st.text_area(
         "Характеристики помещений, перечень оборудования, приборов и необходимых технических средств обучения, используемых в образовательном процессе.",
         value=current_values.get(uslovia_col, '') if uslovia_col else '',
-        height=150,
-        key="uslovia"
+        height=150, key="uslovia"
     )
     
     st.info("Учебно-методическое и информационное обеспечение программы")
     literatura = st.text_area(
         "Обеспеченность Программы методическими материалами и современными литературными источниками, поддерживающими процесс обучения (нормативно-правовые акты и документы; основная и дополнительная литература; Интернет-ресурсы). Все списки литературы и Интернет-ресурсов оформляются в соответствии с требованиями ГОСТ Р 7.0.100–2018.",
         value=current_values.get(literatura_col, '') if literatura_col else '',
-        height=200,
-        key="literatura"
+        height=200, key="literatura"
     )
     
     st.divider()
@@ -362,24 +322,17 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     if st.button("💾 СОХРАНИТЬ И СКАЧАТЬ ФАЙЛ", type="primary", use_container_width=True):
         new_values = current_values.copy()
         
-        # Пояснительная записка
-        if field_napravleno: 
-            new_values[field_napravleno] = napravleno
-        if field_aktualnost: 
-            new_values[field_aktualnost] = aktualnost
-        if field_cel: 
-            new_values[field_cel] = cel
-        if field_results: 
-            new_values[field_results] = results
+        if field_napravleno: new_values[field_napravleno] = napravleno
+        if field_aktualnost: new_values[field_aktualnost] = aktualnost
+        if field_cel: new_values[field_cel] = cel
+        if field_results: new_values[field_results] = results
         
-        # Задачи
         for i in range(10):
             if i < len(task_cols):
                 new_values[task_cols[i]] = tasks[i] if i < len(tasks) else ''
         
-        # === ИЗМЕНЕНО: Сохранение учебного плана (110 тем) ===
         for i in range(max_themes):
-            idx = theme_start_idx + i * cols_per_theme
+            idx = theme_start_idx + i*4
             if idx + 3 < len(all_columns):
                 if i < len(edited_df):
                     row = edited_df.iloc[i]
@@ -389,12 +342,10 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
                     new_values[all_columns[idx+3]] = str(row['Форма контроля']) if row['Форма контроля'] else ''
                 else:
                     for j in range(4):
-                        if idx + j < len(all_columns):
-                            new_values[all_columns[idx+j]] = ''
+                        new_values[all_columns[idx+j]] = ''
         
-        # === ИЗМЕНЕНО: Сохранение содержания (110 тем) ===
         for i in range(max_themes):
-            s_idx = content_start_idx + i * 2
+            s_idx = content_start_idx + i*2
             if s_idx + 1 < len(all_columns):
                 if i < len(content_list):
                     new_values[all_columns[s_idx]] = content_list[i]['teoria']
@@ -403,15 +354,10 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
                     new_values[all_columns[s_idx]] = ''
                     new_values[all_columns[s_idx+1]] = ''
         
-        # Дополнительные сведения
-        if forms_col:
-            new_values[forms_col] = formy_kontrolya
-        if uslovia_col:
-            new_values[uslovia_col] = uslovia
-        if literatura_col:
-            new_values[literatura_col] = literatura
+        if forms_col: new_values[forms_col] = formy_kontrolya
+        if uslovia_col: new_values[uslovia_col] = uslovia
+        if literatura_col: new_values[literatura_col] = literatura
         
-        # Создаём новый DataFrame
         new_row = [new_values.get(col, '') for col in all_columns]
         df_new = pd.DataFrame([new_row], columns=all_columns)
         
