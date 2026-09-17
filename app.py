@@ -289,9 +289,9 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     # === ДОПОЛНИТЕЛЬНЫЕ СВЕДЕНИЯ ===
     st.header("📋 Дополнительные сведения")
     
-    forms_col = all_columns[-3] if len(all_columns) >= 3 else None
-    uslovia_col = all_columns[-2] if len(all_columns) >= 2 else None
-    literatura_col = all_columns[-1] if len(all_columns) >= 1 else None
+    forms_col = all_columns[-5] if len(all_columns) >= 5 else None
+    uslovia_col = all_columns[-4] if len(all_columns) >= 4 else None
+    literatura_col = all_columns[-3] if len(all_columns) >= 3 else None
     
     st.info("Формы контроля и оценочные материалы")
     formy_kontrolya = st.text_area(
