@@ -37,7 +37,9 @@ def normalize(s):
     """Приводит строку к нижнему регистру и убирает лишние пробелы/знаки."""
     if s is None:
         return ''
-    return re.sub(r'\s+', ' ', str(s).strip().lower())
+    # Заменяем неразрывные пробелы и другие пробельные символы на обычный пробел
+    s = str(s).replace('\xa0', ' ').replace('\u2009', ' ').replace('\u202f', ' ')
+    return re.sub(r'\s+', ' ', s.strip().lower())
 
 def find_column_by_keywords(columns, keyword_groups):
     """
@@ -166,25 +168,37 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
         ['содержание', 'практи'], ['содержание практики']
     ])
     
-    # === ДОПОЛНИТЕЛЬНЫЕ СВЕДЕНИЯ — ПО ПОЗИЦИИ С КОНЦА (как в исходном коде) ===
-    # В исходном коде: forms_col = all_columns[-5], uslovia_col = all_columns[-4], literatura_col = all_columns[-3]
-    # Но нужно исключить столбцы содержания, если они идут в конце.
-    # Поэтому сначала попробуем найти по названию, а если не нашли — берём позицию с конца,
-    # пропуская столбцы, которые уже заняты под содержание/УТП.
-    
+    # === ДОПОЛНИТЕЛЬНЫЕ СВЕДЕНИЯ — ПОИСК ПО ТОЧНЫМ НАЗВАНИЯМ ===
     forms_col = find_column_by_keywords(all_columns, [
-        ['форма', 'контрол'], ['оценочные материал'], ['формы подведения итогов'],
-        ['формы контроля']
-    ])
-    uslovia_col = find_column_by_keywords(all_columns, [
-        ['материально', 'техническ'], ['условия реализации'],
-        ['условия']
-    ])
-    literatura_col = find_column_by_keywords(all_columns, [
-        ['учебно', 'методическ'], ['информационное обеспечен'], ['литератур']
+        ['формы контроля'],
+        ['форма контроля'],
+        ['формы аттестации'],
+        ['форма аттестации'],
+        ['оценочные материалы'],
+        ['формы подведения итогов'],
+        ['форма', 'контрол'],
     ])
     
-    # Если не нашли по названию — берём позиционно с конца, пропуская занятые столбцы
+    uslovia_col = find_column_by_keywords(all_columns, [
+        ['материально-технические условия'],
+        ['материально технические условия'],
+        ['условия реализации'],
+        ['материально', 'техническ'],
+        ['условия'],
+    ])
+    
+    literatura_col = find_column_by_keywords(all_columns, [
+        ['учебно-методическое'],
+        ['учебно методическое'],
+        ['информационное обеспечение'],
+        ['методическое обеспечение'],
+        ['учебно', 'методическ'],
+        ['информационное обеспечен'],
+        ['литератур'],
+    ])
+    
+    # Fallback: если не нашли по названию — берём позиционно с конца,
+    # пропуская занятые столбцы
     occupied = set(readonly_cols)
     occupied.update([field_napravleno, field_aktualnost, field_cel, field_results])
     occupied.update(task_cols)
@@ -193,7 +207,6 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     if tema_col:
         occupied.add(tema_col)
     
-    # Собираем свободные столбцы с конца
     free_from_end = [c for c in reversed(all_columns) if c not in occupied]
     
     if forms_col is None and len(free_from_end) >= 1:
@@ -288,8 +301,6 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     st.info("В колонке «Формы аттестации (контроля)» указываются формы подведения итогов освоения каждого раздела (зачеты, проекты, конкурсы, выставки и т.п.) и средства контроля (тесты, творческие задания и т.п.), если они применяются.")
     
     # Определяем число тем:
-    # 1) Если нашли столбцы содержания — по их количеству
-    # 2) Иначе — позиционно от tema_col, идя по 4 столбца, пока не встретим "содержание" или конец
     theme_start_idx = None
     if tema_col and tema_col in all_columns:
         theme_start_idx = all_columns.index(tema_col)
