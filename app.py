@@ -126,29 +126,26 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
             else:
                 current_values[col] = str(val).strip()
     
-    # === ОПРЕДЕЛЕНИЕ СТОЛБЦОВ ПО НАЗВАНИЯМ ===
-    # Первые 10 столбцов — данные заявки (по позиции, они всегда в начале)
+    # === ОПРЕДЕЛЕНИЕ СТОЛБЦОВ ===
+    # Первые 10 столбцов — данные заявки (по позиции)
     readonly_cols = all_columns[:10]
     
-    # Поля пояснительной записки
+    # Поля пояснительной записки — по названию
     field_napravleno = find_column_by_keywords(all_columns, [
-        ['направлен'], ['направлена'], ['программа направлена']
+        ['направлен'], ['программа направлена']
     ])
     field_aktualnost = find_column_by_keywords(all_columns, [
-        ['актуальност'], ['актуальность программы']
+        ['актуальност']
     ])
     field_cel = find_column_by_keywords(all_columns, [
-        ['цель'], ['цель программы']
+        ['цель']
     ])
     field_results = find_column_by_keywords(all_columns, [
         ['планируемые результат'], ['результат']
     ])
     
-    # Задачи — все столбцы, содержащие "задача"
-    task_cols = find_all_columns_by_keywords(all_columns, [
-        ['задач']
-    ])
-    # Исключаем столбцы, которые уже заняты под другие поля
+    # Задачи — все столбцы, содержащие "задача", исключая уже занятые
+    task_cols = find_all_columns_by_keywords(all_columns, [['задач']])
     task_cols = [c for c in task_cols if c not in [field_napravleno, field_aktualnost, field_cel, field_results]]
     
     # Лимит часов
@@ -156,19 +153,9 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
         ['лимит', 'час'], ['часов', 'программ'], ['количество часов']
     ])
     
-    # Столбцы УТП: тема, теория, практика, форма контроля
-    # Ищем по названиям. Если не нашли — используем позиционный fallback.
+    # Столбцы УТП
     tema_col = find_column_by_keywords(all_columns, [
         ['наименование', 'тем'], ['тема'], ['раздел', 'тем']
-    ])
-    teoria_col = find_column_by_keywords(all_columns, [
-        ['теория', 'час'], ['теория'], ['теоретич']
-    ])
-    praktika_col = find_column_by_keywords(all_columns, [
-        ['практика', 'час'], ['практика'], ['практическ']
-    ])
-    kontrol_col = find_column_by_keywords(all_columns, [
-        ['форма', 'аттестац'], ['форма', 'контрол'], ['аттестац'], ['контрол']
     ])
     
     # Столбцы содержания теории/практики — ищем ВСЕ по ключевым словам
@@ -178,6 +165,43 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     content_praktika_cols = find_all_columns_by_keywords(all_columns, [
         ['содержание', 'практи'], ['содержание практики']
     ])
+    
+    # === ДОПОЛНИТЕЛЬНЫЕ СВЕДЕНИЯ — ПО ПОЗИЦИИ С КОНЦА (как в исходном коде) ===
+    # В исходном коде: forms_col = all_columns[-5], uslovia_col = all_columns[-4], literatura_col = all_columns[-3]
+    # Но нужно исключить столбцы содержания, если они идут в конце.
+    # Поэтому сначала попробуем найти по названию, а если не нашли — берём позицию с конца,
+    # пропуская столбцы, которые уже заняты под содержание/УТП.
+    
+    forms_col = find_column_by_keywords(all_columns, [
+        ['форма', 'контрол'], ['оценочные материал'], ['формы подведения итогов'],
+        ['формы контроля']
+    ])
+    uslovia_col = find_column_by_keywords(all_columns, [
+        ['материально', 'техническ'], ['условия реализации'],
+        ['условия']
+    ])
+    literatura_col = find_column_by_keywords(all_columns, [
+        ['учебно', 'методическ'], ['информационное обеспечен'], ['литератур']
+    ])
+    
+    # Если не нашли по названию — берём позиционно с конца, пропуская занятые столбцы
+    occupied = set(readonly_cols)
+    occupied.update([field_napravleno, field_aktualnost, field_cel, field_results])
+    occupied.update(task_cols)
+    occupied.update(content_teoria_cols)
+    occupied.update(content_praktika_cols)
+    if tema_col:
+        occupied.add(tema_col)
+    
+    # Собираем свободные столбцы с конца
+    free_from_end = [c for c in reversed(all_columns) if c not in occupied]
+    
+    if forms_col is None and len(free_from_end) >= 1:
+        forms_col = free_from_end[0]
+    if uslovia_col is None and len(free_from_end) >= 2:
+        uslovia_col = free_from_end[1]
+    if literatura_col is None and len(free_from_end) >= 3:
+        literatura_col = free_from_end[2]
     
     # === БЛОК 1: ТОЛЬКО ЧТЕНИЕ ===
     st.header("📋 Данные из заявки")
@@ -263,25 +287,19 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     st.info("УТП содержит перечень разделов (модулей) и тем, определяет их последовательность, количество часов по каждому разделу (модулю) и теме с указанием теоретических и практических занятий, а также форм аттестации и контроля. Количество часов в УТП указывается из расчёта на одну группу.")
     st.info("В колонке «Формы аттестации (контроля)» указываются формы подведения итогов освоения каждого раздела (зачеты, проекты, конкурсы, выставки и т.п.) и средства контроля (тесты, творческие задания и т.п.), если они применяются.")
     
-    # Определяем, сколько тем реально в файле.
-    # Считаем по столбцу "Тема": сколько заполненных значений (или до первого пустого подряд).
-    # Более надёжно: смотрим, сколько столбцов content_teoria_cols есть — по ним и восстановим число тем.
-    # Но если content_teoria_cols пуст — используем позиционный fallback.
-    
-    # Позиционный fallback: находим индекс tema_col в all_columns и идём по 4 столбца
+    # Определяем число тем:
+    # 1) Если нашли столбцы содержания — по их количеству
+    # 2) Иначе — позиционно от tema_col, идя по 4 столбца, пока не встретим "содержание" или конец
     theme_start_idx = None
     if tema_col and tema_col in all_columns:
         theme_start_idx = all_columns.index(tema_col)
     
-    # Если нашли столбцы содержания по названию — используем их количество как число тем
     if content_teoria_cols:
         max_themes = len(content_teoria_cols)
     elif theme_start_idx is not None:
-        # Считаем темы позиционно: 4 столбца на тему, пока не встретим столбец содержания или конец
         max_themes = 0
         idx = theme_start_idx
         while idx + 3 < len(all_columns):
-            # Проверяем, не начинается ли блок содержания
             col_norm = normalize(all_columns[idx])
             if 'содержан' in col_norm:
                 break
@@ -290,7 +308,6 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     else:
         max_themes = 0
     
-    # Заполняем table_data
     table_data = []
     if theme_start_idx is not None:
         for i in range(max_themes):
@@ -392,24 +409,6 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     # === ДОПОЛНИТЕЛЬНЫЕ СВЕДЕНИЯ ===
     st.header("📋 Дополнительные сведения")
     
-    forms_col = find_column_by_keywords(all_columns, [
-        ['форма', 'контрол'], ['оценочные материал'], ['формы подведения итогов']
-    ])
-    uslovia_col = find_column_by_keywords(all_columns, [
-        ['материально', 'техническ'], ['условия реализации']
-    ])
-    literatura_col = find_column_by_keywords(all_columns, [
-        ['учебно', 'методическ'], ['информационное обеспечен'], ['литератур']
-    ])
-    
-    # Fallback: если не нашли — берём последние 3 столбца (как в исходном коде)
-    if forms_col is None and len(all_columns) >= 3:
-        forms_col = all_columns[-3]
-    if uslovia_col is None and len(all_columns) >= 2:
-        uslovia_col = all_columns[-2]
-    if literatura_col is None and len(all_columns) >= 1:
-        literatura_col = all_columns[-1]
-    
     st.info("Формы контроля и оценочные материалы")
     formy_kontrolya = st.text_area(
         "Данный структурный элемент Программы содержит описание форм подведения итогов реализации Программы текущего, промежуточного и итогового контроля (при наличии), которые перечисляются согласно учебному (тематическому) плану (зачеты, проекты, конкурсы, концерты, выставки, фестивали и т.п.) и описание средств контроля (тесты, творческие задания и т.п.), которые позволяют определить достижение планируемых результатов учащимися.",
@@ -439,17 +438,14 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     if st.button("💾 СОХРАНИТЬ И СКАЧАТЬ ФАЙЛ", type="primary", use_container_width=True):
         new_values = current_values.copy()
         
-        # Пояснительная записка
         if field_napravleno: new_values[field_napravleno] = napravleno
         if field_aktualnost: new_values[field_aktualnost] = aktualnost
         if field_cel: new_values[field_cel] = cel
         if field_results: new_values[field_results] = results
         
-        # Задачи
         for i, col in enumerate(task_cols):
             new_values[col] = tasks[i] if i < len(tasks) else ''
         
-        # УТП
         if theme_start_idx is not None:
             for i in range(max_themes):
                 idx = theme_start_idx + i * 4
@@ -464,13 +460,11 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
                         for j in range(4):
                             new_values[all_columns[idx+j]] = ''
         
-        # Содержание теории/практики — по найденным столбцам
         for i, col in enumerate(content_teoria_cols):
             new_values[col] = content_list[i]['teoria'] if i < len(content_list) else ''
         for i, col in enumerate(content_praktika_cols):
             new_values[col] = content_list[i]['praktika'] if i < len(content_list) else ''
         
-        # Дополнительные сведения
         if forms_col: new_values[forms_col] = formy_kontrolya
         if uslovia_col: new_values[uslovia_col] = uslovia
         if literatura_col: new_values[literatura_col] = literatura
