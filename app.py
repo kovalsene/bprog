@@ -150,9 +150,10 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     task_cols = find_all_columns_by_keywords(all_columns, [['задач']])
     task_cols = [c for c in task_cols if c not in [field_napravleno, field_aktualnost, field_cel, field_results]]
     
-    # Лимит часов
+    # Лимит часов — столбец называется просто "Часов"
     hours_limit_col = find_column_by_keywords(all_columns, [
-        ['лимит', 'час'], ['часов', 'программ'], ['количество часов']
+        ['часов'],
+        ['час'],
     ])
     
     # Столбцы УТП
@@ -206,6 +207,8 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     occupied.update(content_praktika_cols)
     if tema_col:
         occupied.add(tema_col)
+    if hours_limit_col:
+        occupied.add(hours_limit_col)
     
     free_from_end = [c for c in reversed(all_columns) if c not in occupied]
     
@@ -291,9 +294,14 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     
     hours_limit = 36
     if hours_limit_col:
-        try:
-            hours_limit = int(float(current_values.get(hours_limit_col, '36')))
-        except:
+        raw = str(current_values.get(hours_limit_col, '36'))
+        m = re.search(r'\d+(?:[.,]\d+)?', raw)
+        if m:
+            try:
+                hours_limit = int(float(m.group().replace(',', '.')))
+            except:
+                hours_limit = 36
+        else:
             hours_limit = 36
     
     st.info(f"⚠️ Лимит часов по программе: **{hours_limit}**. Не превышайте это значение.")
