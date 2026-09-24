@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from io import BytesIO
+import re
 
 st.set_page_config(page_title="Редактор программы кружка", layout="wide")
 st.title("📝 Заполнение программы обучения")
@@ -32,6 +33,39 @@ def save_to_bytes(df):
         df.to_excel(writer, index=False, sheet_name='Данные')
     return output.getvalue()
 
+def normalize(s):
+    """Приводит строку к нижнему регистру и убирает лишние пробелы/знаки."""
+    if s is None:
+        return ''
+    return re.sub(r'\s+', ' ', str(s).strip().lower())
+
+def find_column_by_keywords(columns, keyword_groups):
+    """
+    Ищет столбец по ключевым словам.
+    keyword_groups: список списков. Каждый внутренний список — это набор
+    ключевых слов, которые ВСЕ должны присутствовать в названии столбца.
+    Возвращает первый подходящий столбец или None.
+    """
+    normalized = [(col, normalize(col)) for col in columns]
+    for group in keyword_groups:
+        group_norm = [normalize(kw) for kw in group]
+        for col, col_norm in normalized:
+            if all(kw in col_norm for kw in group_norm):
+                return col
+    return None
+
+def find_all_columns_by_keywords(columns, keyword_groups):
+    """Возвращает список ВСЕХ столбцов, подходящих под ключевые слова (в порядке следования)."""
+    result = []
+    normalized = [(col, normalize(col)) for col in columns]
+    for col, col_norm in normalized:
+        for group in keyword_groups:
+            group_norm = [normalize(kw) for kw in group]
+            if all(kw in col_norm for kw in group_norm):
+                result.append(col)
+                break
+    return result
+
 # === ЗАГРУЗКА ФАЙЛА ===
 st.header("📂 Загрузка файла Excel")
 
@@ -42,11 +76,8 @@ uploaded_file = st.file_uploader(
     help="Загрузите Excel-файл, полученный от администратора"
 )
 
-# Обработка загрузки нового файла
 if uploaded_file is not None:
-    # Проверяем, новый ли это файл
     is_new = (st.session_state.original_filename != uploaded_file.name)
-    
     if is_new or not st.session_state.file_loaded:
         df = load_excel_from_bytes(uploaded_file.getvalue())
         if df is not None:
@@ -55,7 +86,6 @@ if uploaded_file is not None:
             st.session_state.original_filename = uploaded_file.name
             st.success(f"✅ Файл **'{uploaded_file.name}'** успешно загружен!")
 
-# Если файл не загружен
 if not st.session_state.file_loaded:
     st.info("""
     ### 📋 Как работать с программой:
@@ -74,7 +104,6 @@ if not st.session_state.file_loaded:
 if st.session_state.file_loaded and st.session_state.df_current is not None:
     df = st.session_state.df_current.copy()
     
-    # Информация о файле
     col_info1, col_info2 = st.columns([3, 1])
     with col_info1:
         st.success(f"📁 Работаем с файлом: **{st.session_state.original_filename}**")
@@ -87,7 +116,7 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     
     all_columns = df.columns.tolist()
     
-    # Получаем текущие значения
+    # Текущие значения из первой строки
     current_values = {}
     if not df.empty:
         for col in all_columns:
@@ -97,11 +126,63 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
             else:
                 current_values[col] = str(val).strip()
     
+    # === ОПРЕДЕЛЕНИЕ СТОЛБЦОВ ПО НАЗВАНИЯМ ===
+    # Первые 10 столбцов — данные заявки (по позиции, они всегда в начале)
+    readonly_cols = all_columns[:10]
+    
+    # Поля пояснительной записки
+    field_napravleno = find_column_by_keywords(all_columns, [
+        ['направлен'], ['направлена'], ['программа направлена']
+    ])
+    field_aktualnost = find_column_by_keywords(all_columns, [
+        ['актуальност'], ['актуальность программы']
+    ])
+    field_cel = find_column_by_keywords(all_columns, [
+        ['цель'], ['цель программы']
+    ])
+    field_results = find_column_by_keywords(all_columns, [
+        ['планируемые результат'], ['результат']
+    ])
+    
+    # Задачи — все столбцы, содержащие "задача"
+    task_cols = find_all_columns_by_keywords(all_columns, [
+        ['задач']
+    ])
+    # Исключаем столбцы, которые уже заняты под другие поля
+    task_cols = [c for c in task_cols if c not in [field_napravleno, field_aktualnost, field_cel, field_results]]
+    
+    # Лимит часов
+    hours_limit_col = find_column_by_keywords(all_columns, [
+        ['лимит', 'час'], ['часов', 'программ'], ['количество часов']
+    ])
+    
+    # Столбцы УТП: тема, теория, практика, форма контроля
+    # Ищем по названиям. Если не нашли — используем позиционный fallback.
+    tema_col = find_column_by_keywords(all_columns, [
+        ['наименование', 'тем'], ['тема'], ['раздел', 'тем']
+    ])
+    teoria_col = find_column_by_keywords(all_columns, [
+        ['теория', 'час'], ['теория'], ['теоретич']
+    ])
+    praktika_col = find_column_by_keywords(all_columns, [
+        ['практика', 'час'], ['практика'], ['практическ']
+    ])
+    kontrol_col = find_column_by_keywords(all_columns, [
+        ['форма', 'аттестац'], ['форма', 'контрол'], ['аттестац'], ['контрол']
+    ])
+    
+    # Столбцы содержания теории/практики — ищем ВСЕ по ключевым словам
+    content_teoria_cols = find_all_columns_by_keywords(all_columns, [
+        ['содержание', 'теори'], ['содержание теории']
+    ])
+    content_praktika_cols = find_all_columns_by_keywords(all_columns, [
+        ['содержание', 'практи'], ['содержание практики']
+    ])
+    
     # === БЛОК 1: ТОЛЬКО ЧТЕНИЕ ===
     st.header("📋 Данные из заявки")
     st.caption("Эти поля заполнены администратором и не редактируются")
     
-    readonly_cols = all_columns[:10]
     cols = st.columns(2)
     for i, col_name in enumerate(readonly_cols):
         with cols[i % 2]:
@@ -117,11 +198,6 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     # === БЛОК 2: ПОЯСНИТЕЛЬНАЯ ЗАПИСКА ===
     st.header("✍️ Пояснительная записка")
     st.info("⚠️ Не используйте название кружка, пишите просто: 'программа'")
-    
-    field_napravleno = all_columns[10] if len(all_columns) > 10 else None
-    field_aktualnost = all_columns[11] if len(all_columns) > 11 else None
-    field_cel = all_columns[12] if len(all_columns) > 12 else None
-    field_results = all_columns[23] if len(all_columns) > 23 else None
     
     napravleno = st.text_area(
         "Продолжите фразу 'Программа направлена на...'",
@@ -150,14 +226,11 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     # === ЗАДАЧИ ===
     st.subheader("📌 Задачи программы")
     
-    task_start_idx = 13
-    task_end_idx = 22
-    task_cols = all_columns[task_start_idx:task_end_idx+1] if len(all_columns) > task_end_idx else []
-    
     filled_tasks = sum(1 for col in task_cols if current_values.get(col, ''))
     
     num_tasks = st.slider(
-        "Количество задач (установите необходимое количество):", min_value=0, max_value=10,
+        "Количество задач (установите необходимое количество):",
+        min_value=0, max_value=max(10, len(task_cols)),
         value=max(2, min(10, filled_tasks)) if filled_tasks > 0 else 3,
         step=1, key="num_tasks"
     )
@@ -179,7 +252,6 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     # === БЛОК 3: УЧЕБНЫЙ ПЛАН ===
     st.header("📅 Учебно-тематический план")
     
-    hours_limit_col = all_columns[5] if len(all_columns) > 5 else None
     hours_limit = 36
     if hours_limit_col:
         try:
@@ -191,42 +263,70 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     st.info("УТП содержит перечень разделов (модулей) и тем, определяет их последовательность, количество часов по каждому разделу (модулю) и теме с указанием теоретических и практических занятий, а также форм аттестации и контроля. Количество часов в УТП указывается из расчёта на одну группу.")
     st.info("В колонке «Формы аттестации (контроля)» указываются формы подведения итогов освоения каждого раздела (зачеты, проекты, конкурсы, выставки и т.п.) и средства контроля (тесты, творческие задания и т.п.), если они применяются.")
     
-    theme_start_idx = 24
-    max_themes = 100
+    # Определяем, сколько тем реально в файле.
+    # Считаем по столбцу "Тема": сколько заполненных значений (или до первого пустого подряд).
+    # Более надёжно: смотрим, сколько столбцов content_teoria_cols есть — по ним и восстановим число тем.
+    # Но если content_teoria_cols пуст — используем позиционный fallback.
     
+    # Позиционный fallback: находим индекс tema_col в all_columns и идём по 4 столбца
+    theme_start_idx = None
+    if tema_col and tema_col in all_columns:
+        theme_start_idx = all_columns.index(tema_col)
+    
+    # Если нашли столбцы содержания по названию — используем их количество как число тем
+    if content_teoria_cols:
+        max_themes = len(content_teoria_cols)
+    elif theme_start_idx is not None:
+        # Считаем темы позиционно: 4 столбца на тему, пока не встретим столбец содержания или конец
+        max_themes = 0
+        idx = theme_start_idx
+        while idx + 3 < len(all_columns):
+            # Проверяем, не начинается ли блок содержания
+            col_norm = normalize(all_columns[idx])
+            if 'содержан' in col_norm:
+                break
+            max_themes += 1
+            idx += 4
+    else:
+        max_themes = 0
+    
+    # Заполняем table_data
     table_data = []
-    for i in range(max_themes):
-        idx = theme_start_idx + i * 4
-        if idx + 3 < len(all_columns):
-            tema = current_values.get(all_columns[idx], '')
-            teoria_raw = current_values.get(all_columns[idx + 1], '0')
-            praktika_raw = current_values.get(all_columns[idx + 2], '0')
-            kontrol = current_values.get(all_columns[idx + 3], '')
-            
-            try:
-                teoria = float(teoria_raw) if teoria_raw and teoria_raw != '' else 0.0
-            except:
-                teoria = 0.0
-            try:
-                praktika = float(praktika_raw) if praktika_raw and praktika_raw != '' else 0.0
-            except:
-                praktika = 0.0
-            
-            table_data.append({
-                'Номер': i + 1, 'Тема': tema,
-                'Теория (часы)': teoria, 'Практика (часы)': praktika,
-                'Форма контроля': kontrol,
-            })
+    if theme_start_idx is not None:
+        for i in range(max_themes):
+            idx = theme_start_idx + i * 4
+            if idx + 3 < len(all_columns):
+                tema = current_values.get(all_columns[idx], '')
+                teoria_raw = current_values.get(all_columns[idx + 1], '0')
+                praktika_raw = current_values.get(all_columns[idx + 2], '0')
+                kontrol = current_values.get(all_columns[idx + 3], '')
+                
+                try:
+                    teoria = float(teoria_raw) if teoria_raw and str(teoria_raw).strip() != '' else 0.0
+                except:
+                    teoria = 0.0
+                try:
+                    praktika = float(praktika_raw) if praktika_raw and str(praktika_raw).strip() != '' else 0.0
+                except:
+                    praktika = 0.0
+                
+                table_data.append({
+                    'Номер': i + 1, 'Тема': tema,
+                    'Теория (часы)': teoria, 'Практика (часы)': praktika,
+                    'Форма контроля': kontrol,
+                })
     
     filled_themes = sum(1 for r in table_data if r['Тема'] or r['Теория (часы)'] > 0 or r['Практика (часы)'] > 0)
     suggested_rows = max(filled_themes, 5)
+    
     num_rows = st.number_input(
-        "Количество тем для заполнения (установите необходимое количество):", min_value=0, max_value=len(table_data),
-        value=min(suggested_rows, len(table_data)), step=1, key="num_themes"
+        "Количество тем для заполнения (установите необходимое количество):",
+        min_value=0, max_value=max(len(table_data), 1),
+        value=min(suggested_rows, max(len(table_data), 1)), step=1, key="num_themes"
     )
     num_rows = int(num_rows)
     
-    if num_rows > 0:
+    if num_rows > 0 and len(table_data) > 0:
         display_data = pd.DataFrame(table_data[:num_rows])
         edited_df = st.data_editor(
             display_data,
@@ -248,7 +348,7 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
         col_t1, col_t2, col_t3, col_t4 = st.columns(4)
         col_t1.metric("📘 Теория", f"{total_teoria:.0f}")
         col_t2.metric("📗 Практика", f"{total_praktika:.0f}")
-        col_t3.metric("📊 Всего", f"{total_hours:.0f}", 
+        col_t3.metric("📊 Всего", f"{total_hours:.0f}",
                      delta=f"⚠️ +{total_hours - hours_limit:.0f}" if total_hours > hours_limit else None)
         col_t4.metric("🎯 Лимит", str(hours_limit))
         
@@ -263,24 +363,27 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     st.header("📖 Содержание учебного плана")
     st.info("Реферативное (краткое) описание разделов (модулей) и тем программы в соответствии с учебным (тематическим) планом. В данном подразделе кратко описываются виды деятельности на занятии: теория (лекция, семинар, дискуссия, круглый стол, консультация и т.п.) и практика (практическая работа, лабораторная работа, самостоятельная работа, соревнование, игра, экскурсия и т.п.).")
     
-    content_start_idx = theme_start_idx + max_themes * 4
     content_list = []
     if num_rows > 0:
         for i in range(num_rows):
             tema_name = edited_df.iloc[i]['Тема'] if i < len(edited_df) and edited_df.iloc[i]['Тема'] else f"Тема {i+1}"
             
-            s_teoria_col = all_columns[content_start_idx + i*2] if content_start_idx + i*2 < len(all_columns) else None
-            s_praktika_col = all_columns[content_start_idx + i*2 + 1] if content_start_idx + i*2 + 1 < len(all_columns) else None
+            s_teoria_col = content_teoria_cols[i] if i < len(content_teoria_cols) else None
+            s_praktika_col = content_praktika_cols[i] if i < len(content_praktika_cols) else None
             
             col_s1, col_s2 = st.columns(2)
             with col_s1:
-                s_teoria = st.text_area(f"📘 {tema_name} — Содержание теории",
+                s_teoria = st.text_area(
+                    f"📘 {tema_name} — Содержание теории",
                     value=current_values.get(s_teoria_col, '') if s_teoria_col else '',
-                    height=80, key=f"ct_{i}")
+                    height=80, key=f"ct_{i}"
+                )
             with col_s2:
-                s_praktika = st.text_area(f"📗 {tema_name} — Содержание практики",
+                s_praktika = st.text_area(
+                    f"📗 {tema_name} — Содержание практики",
                     value=current_values.get(s_praktika_col, '') if s_praktika_col else '',
-                    height=80, key=f"cp_{i}")
+                    height=80, key=f"cp_{i}"
+                )
             
             content_list.append({'teoria': s_teoria, 'praktika': s_praktika})
     
@@ -289,9 +392,23 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     # === ДОПОЛНИТЕЛЬНЫЕ СВЕДЕНИЯ ===
     st.header("📋 Дополнительные сведения")
     
-    forms_col = all_columns[-5] if len(all_columns) >= 5 else None
-    uslovia_col = all_columns[-4] if len(all_columns) >= 4 else None
-    literatura_col = all_columns[-3] if len(all_columns) >= 3 else None
+    forms_col = find_column_by_keywords(all_columns, [
+        ['форма', 'контрол'], ['оценочные материал'], ['формы подведения итогов']
+    ])
+    uslovia_col = find_column_by_keywords(all_columns, [
+        ['материально', 'техническ'], ['условия реализации']
+    ])
+    literatura_col = find_column_by_keywords(all_columns, [
+        ['учебно', 'методическ'], ['информационное обеспечен'], ['литератур']
+    ])
+    
+    # Fallback: если не нашли — берём последние 3 столбца (как в исходном коде)
+    if forms_col is None and len(all_columns) >= 3:
+        forms_col = all_columns[-3]
+    if uslovia_col is None and len(all_columns) >= 2:
+        uslovia_col = all_columns[-2]
+    if literatura_col is None and len(all_columns) >= 1:
+        literatura_col = all_columns[-1]
     
     st.info("Формы контроля и оценочные материалы")
     formy_kontrolya = st.text_area(
@@ -322,38 +439,38 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     if st.button("💾 СОХРАНИТЬ И СКАЧАТЬ ФАЙЛ", type="primary", use_container_width=True):
         new_values = current_values.copy()
         
+        # Пояснительная записка
         if field_napravleno: new_values[field_napravleno] = napravleno
         if field_aktualnost: new_values[field_aktualnost] = aktualnost
         if field_cel: new_values[field_cel] = cel
         if field_results: new_values[field_results] = results
         
-        for i in range(10):
-            if i < len(task_cols):
-                new_values[task_cols[i]] = tasks[i] if i < len(tasks) else ''
+        # Задачи
+        for i, col in enumerate(task_cols):
+            new_values[col] = tasks[i] if i < len(tasks) else ''
         
-        for i in range(max_themes):
-            idx = theme_start_idx + i*4
-            if idx + 3 < len(all_columns):
-                if i < len(edited_df):
-                    row = edited_df.iloc[i]
-                    new_values[all_columns[idx]] = str(row['Тема']) if row['Тема'] else ''
-                    new_values[all_columns[idx+1]] = str(int(row['Теория (часы)'])) if row['Теория (часы)'] > 0 else ''
-                    new_values[all_columns[idx+2]] = str(int(row['Практика (часы)'])) if row['Практика (часы)'] > 0 else ''
-                    new_values[all_columns[idx+3]] = str(row['Форма контроля']) if row['Форма контроля'] else ''
-                else:
-                    for j in range(4):
-                        new_values[all_columns[idx+j]] = ''
+        # УТП
+        if theme_start_idx is not None:
+            for i in range(max_themes):
+                idx = theme_start_idx + i * 4
+                if idx + 3 < len(all_columns):
+                    if i < len(edited_df):
+                        row = edited_df.iloc[i]
+                        new_values[all_columns[idx]] = str(row['Тема']) if row['Тема'] else ''
+                        new_values[all_columns[idx+1]] = str(int(row['Теория (часы)'])) if row['Теория (часы)'] > 0 else ''
+                        new_values[all_columns[idx+2]] = str(int(row['Практика (часы)'])) if row['Практика (часы)'] > 0 else ''
+                        new_values[all_columns[idx+3]] = str(row['Форма контроля']) if row['Форма контроля'] else ''
+                    else:
+                        for j in range(4):
+                            new_values[all_columns[idx+j]] = ''
         
-        for i in range(max_themes):
-            s_idx = content_start_idx + i*2
-            if s_idx + 1 < len(all_columns):
-                if i < len(content_list):
-                    new_values[all_columns[s_idx]] = content_list[i]['teoria']
-                    new_values[all_columns[s_idx+1]] = content_list[i]['praktika']
-                else:
-                    new_values[all_columns[s_idx]] = ''
-                    new_values[all_columns[s_idx+1]] = ''
+        # Содержание теории/практики — по найденным столбцам
+        for i, col in enumerate(content_teoria_cols):
+            new_values[col] = content_list[i]['teoria'] if i < len(content_list) else ''
+        for i, col in enumerate(content_praktika_cols):
+            new_values[col] = content_list[i]['praktika'] if i < len(content_list) else ''
         
+        # Дополнительные сведения
         if forms_col: new_values[forms_col] = formy_kontrolya
         if uslovia_col: new_values[uslovia_col] = uslovia
         if literatura_col: new_values[literatura_col] = literatura
@@ -361,17 +478,14 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
         new_row = [new_values.get(col, '') for col in all_columns]
         df_new = pd.DataFrame([new_row], columns=all_columns)
         
-        # Сохраняем в BytesIO
         excel_bytes = save_to_bytes(df_new)
         
-        # Формируем имя файла для скачивания
         original_name = st.session_state.original_filename or "Программа.xlsx"
         download_name = f"Заполнено_{original_name}"
         
         st.success("✅ Данные подготовлены! Нажмите кнопку ниже для скачивания.")
         st.balloons()
         
-        # Кнопка скачивания
         st.download_button(
             label="📥 СКАЧАТЬ ЗАПОЛНЕННЫЙ ФАЙЛ",
             data=excel_bytes,
