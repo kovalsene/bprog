@@ -369,8 +369,8 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
             column_config={
                 'Номер': st.column_config.NumberColumn("№", disabled=True, width="small"),
                 'Тема': st.column_config.TextColumn("Наименование раздела, темы", width="large"),
-                'Теория (часы)': st.column_config.NumberColumn("Теория, часов", min_value=0, max_value=99, format="%g", width="small"),
-                'Практика (часы)': st.column_config.NumberColumn("Практика, часов", min_value=0, max_value=99, format="%g", width="small"),
+                'Теория (часы)': st.column_config.NumberColumn("Теория, часов", min_value=0, max_value=999, format="%g", width="small"),
+                'Практика (часы)': st.column_config.NumberColumn("Практика, часов", min_value=0, max_value=999, format="%g", width="small"),
                 'Форма контроля': st.column_config.TextColumn("Формы аттестации (контроля)", width="large"),
             },
             num_rows="fixed", use_container_width=True,
