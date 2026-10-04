@@ -145,7 +145,7 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
     
     # Поля пояснительной записки — по названию
     field_napravleno = find_column_by_keywords(all_columns, [
-        ['направлен'], ['программа направлена']
+        ['программа направлена'], ['направлен']
     ])
     field_aktualnost = find_column_by_keywords(all_columns, [
         ['актуальност']
