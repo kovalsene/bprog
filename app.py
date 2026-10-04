@@ -68,6 +68,17 @@ def find_all_columns_by_keywords(columns, keyword_groups):
                 break
     return result
 
+def fmt_hours(v):
+    """Форматирует часы для сохранения в Excel.
+    0.5 -> '0.5', 2.0 -> '2', 0 -> '' (пусто)."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return ''
+    if v == 0:
+        return ''
+    return str(int(v)) if v.is_integer() else str(v)
+
 # === ЗАГРУЗКА ФАЙЛА ===
 st.header("📂 Загрузка файла Excel")
 
@@ -472,8 +483,9 @@ if st.session_state.file_loaded and st.session_state.df_current is not None:
                     if i < len(edited_df):
                         row = edited_df.iloc[i]
                         new_values[all_columns[idx]] = str(row['Тема']) if row['Тема'] else ''
-                        new_values[all_columns[idx+1]] = str(int(row['Теория (часы)'])) if row['Теория (часы)'] > 0 else ''
-                        new_values[all_columns[idx+2]] = str(int(row['Практика (часы)'])) if row['Практика (часы)'] > 0 else ''
+                        # ✅ ИСПРАВЛЕНО: сохраняем дробные часы без обрезки int()
+                        new_values[all_columns[idx+1]] = fmt_hours(row['Теория (часы)'])
+                        new_values[all_columns[idx+2]] = fmt_hours(row['Практика (часы)'])
                         new_values[all_columns[idx+3]] = str(row['Форма контроля']) if row['Форма контроля'] else ''
                     else:
                         for j in range(4):
